@@ -127,7 +127,26 @@ return [
         ],
 
         'request_timeout_seconds' => (int) env('SCRAPE_TIMEOUT', 20),
-        'user_agent' => env('SCRAPE_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'),
+
+        /*
+         * A 429 carrying Retry-After is obeyed to the second. Past this cap we
+         * stop waiting and give up on the page instead — being told to come
+         * back in ten minutes is not a hiccup to retry through.
+         */
+        'retry_after_cap_seconds' => (int) env('SCRAPE_RETRY_AFTER_CAP', 30),
+
+        /*
+         * Consecutive refusals (403/429/503) before the whole portal is
+         * abandoned for this pass. Continuing to walk pages after being turned
+         * away is how a temporary block becomes a permanent one.
+         */
+        'refusals_before_backing_off' => (int) env('SCRAPE_REFUSALS_BEFORE_BACKOFF', 3),
+        /*
+         * Worth refreshing every few months. Real Chrome updates itself, so a
+         * User-Agent claiming a version that is a year and a half old is itself
+         * a bot signal — the opposite of what this string is here for.
+         */
+        'user_agent' => env('SCRAPE_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'),
     ],
 
 ];

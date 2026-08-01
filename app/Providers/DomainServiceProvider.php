@@ -95,6 +95,7 @@ final class DomainServiceProvider extends ServiceProvider
             delayMs: (int) config('search.scraping.delay_between_requests_ms'),
             timeoutSeconds: (int) config('search.scraping.request_timeout_seconds'),
             userAgent: (string) config('search.scraping.user_agent'),
+            retryAfterCapSeconds: (int) config('search.scraping.retry_after_cap_seconds'),
         ));
 
         $this->registerScrapers();
@@ -164,6 +165,7 @@ final class DomainServiceProvider extends ServiceProvider
                     config('search.scraping.max_pages_override.'.$portalSearch->portal()->value)
                     ?? config('search.scraping.max_pages_per_city')
                 ),
+                refusalsBeforeBackingOff: (int) config('search.scraping.refusals_before_backing_off'),
             );
         });
     }

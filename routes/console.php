@@ -14,9 +14,13 @@ use Illuminate\Support\Facades\Schedule;
 | hammering five portals is the fastest way to get the VPS IP blocked.
 | withoutOverlapping guards against a slow scan colliding with the next tick.
 |
+| Deliberately not on the hour. :00 is when every cron on the internet fires,
+| so it is both the portals' busiest minute and the easiest traffic spike to
+| pick a scraper out of.
+|
 */
 
 Schedule::command(ScanPortalsCommand::class)
-    ->hourly()
+    ->hourlyAt(17)
     ->withoutOverlapping()
     ->runInBackground();

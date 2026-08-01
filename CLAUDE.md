@@ -17,7 +17,7 @@ Design implication: the core of the app is **scheduled background work** (scrape
 
 ## Current state
 
-Domain core, application layer and persistence are built and green (69 tests). What exists:
+Feature-complete and green (211 tests). What exists:
 
 - `App\Domain` — `Listing` aggregate, `Price`/`Area`/`City`/`Portal` value objects, `Fingerprint` (cross-portal dedup), `SearchCriteria` specification, `PriceChange`, and the ports.
 - `App\Application` — `IngestListing` (dedup + price-change detection + alerting) and `ScanPortals` (per-portal orchestration, one portal failing does not abort the rest).
@@ -26,6 +26,21 @@ Domain core, application layer and persistence are built and green (69 tests). W
 - `App\Infrastructure\Scraping` — shared support plus **all five portal adapters**, verified end-to-end against the live sites.
 - Browse UI — `ListingCatalog` read port, `EloquentListingCatalog`, `ListingsController` and `resources/js/pages/Listings.vue` (filter by city/portal/price drops, five sort orders, paging, per-listing price history).
 - Housekeeping — `ListingMaintenance` retires adverts a portal stopped showing, and `ListingPlausibility` flags listings too cheap per m² to be a flat.
+- `App\Domain\Listing\Appraisal` — labels and a score that rank listings ("Poniżej 500 000 zł", "31% poniżej mediany m²", "Do remontu"), recomputed over the whole set after every scan by `AppraiseListings`. Drives the default `best_value` sort.
+- Deployment — `deploy.sh` stands the Docker stack up on a VPS in one idempotent command.
+
+### How the ranking works
+
+Weights live in `App\Domain\Listing\Appraisal\ListingLabel` and encode one specific situation: a first mortgage kept deliberately small, on a flat that will not swallow another 100 000 zł. That is why total price (+30) outranks price per m² (+25), and why "needs renovation" (−25) costs nearly as much as a bargain gains. Thresholds are in `config('search.appraisal')`.
+
+Two guards stop junk topping the list, both found by running against live data rather than by tests:
+
+- An **absolute** floor (`suspicious_below_price_per_m2`) catches nonsense like 1 549 zł/m².
+- A **relative** floor (`too_good_to_be_true_percent`, 40% under the city median) catches the rest. No single absolute number works across four cities — 3 777 zł/m² is ordinary in Tomaszów and impossible in Wrocław.
+
+Such listings stay on the list with their warning; they are simply never advertised as finds.
+
+Cheaper-elsewhere detection needs `variant_key` (city|area|rooms, **without** price). The fingerprint deliberately includes price so one flat at two prices stays two rows; `variant_key` is how those rows find each other again.
 
 ### Retiring and flagging
 
@@ -69,7 +84,17 @@ Things that bite, all covered by tests:
 - **Nieruchomości-online ignores every price and area filter** — positional slots and named `priceFrom`/`areaFrom` params were both tried against the live site and both returned the unfiltered set. It therefore gets its own deeper page ceiling in `config('search.scraping.max_pages_override')`; correctness is unaffected because the domain filters regardless.
 - Items missing area or rooms are skipped and counted in `ScrapedPage::$skipped`. If a portal changes shape the honest symptom is "parsed 0, skipped 44", and the parser logs an error.
 
-Scrape politeness lives in `config('search.scraping')` and `PoliteHttpClient`: a pause before every request, 3 retries with backoff, and a hard `max_pages_per_city` ceiling so a bogus `totalPages` cannot turn one scan into thousands of requests. Tests use `Sleep::fake()` so none of this costs wall-clock.
+### Not getting banned
+
+Being blocked is the failure mode that actually ends this project, so the measures below are load-bearing, not decoration. All live in `config('search.scraping')`, `PoliteHttpClient` and `PaginatedListingProvider`, and all are tested with `Sleep::fake()` so none of it costs wall-clock.
+
+- **A jittered pause before every request** (±25% around `delay_between_requests_ms`). Perfectly even spacing is a bot signal in itself — nobody loads pages exactly 1500 ms apart for twenty minutes.
+- **`Retry-After` is obeyed to the second.** Ignoring it and knocking again on a flat 2 s backoff is precisely how a soft rate limit becomes a hard ban. Both header forms (seconds and HTTP-date) are handled. Past `retry_after_cap_seconds` we stop waiting and give up on the page instead of holding the scan open.
+- **A circuit breaker per portal.** 403/429/503 arrive as `PortalRefused` (distinct from a generic failure on purpose); after `refusals_before_backing_off` the whole portal is abandoned for that pass. Walking the remaining 25–80 pages after being turned away is what makes a temporary block permanent.
+- **A refused sweep never reports success.** `PaginatedListingProvider` rethrows at the end even if it recovered, because `ScanPortals` only retires adverts for portals that scanned cleanly — a silent failure would let a rate limit deactivate listings we simply never read. Two existing provider tests guard this; a first attempt at the breaker broke both.
+- **Scheduled at `hourlyAt(17)`, not `hourly()`.** `:00` is when every cron on the internet fires — the portals' busiest minute and the easiest spike to pick a scraper out of.
+- **The `user_agent` needs refreshing every few months.** Real Chrome updates itself, so a User-Agent pinned to a version a year and a half old is itself a bot signal — the opposite of what the string is for.
+- **A hard `max_pages_per_city` ceiling** so a bogus `totalPages` cannot turn one scan into thousands of requests.
 
 ### Environment caveats discovered while building
 
