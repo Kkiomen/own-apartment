@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Mieszkania">
+    <rect width="100" height="100" rx="22" fill="#3d4e68"/>
+    <g fill="#ffffff">
+        <rect x="22" y="26" width="28" height="50" rx="3"/>
+        <rect x="54" y="44" width="24" height="32" rx="3"/>
+    </g>
+    <g fill="#3d4e68">
+        <rect x="27" y="34" width="8" height="8" rx="1.5"/>
+        <rect x="39" y="34" width="8" height="8" rx="1.5"/>
+        <rect x="27" y="50" width="8" height="8" rx="1.5"/>
+        <rect x="39" y="50" width="8" height="8" rx="1.5"/>
+        <rect x="61" y="52" width="8" height="8" rx="1.5"/>
+        <rect x="61" y="64" width="8" height="8" rx="1.5"/>
+    </g>
+</svg>

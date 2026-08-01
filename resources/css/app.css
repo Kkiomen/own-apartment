@@ -1,0 +1,119 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+/*
+ * One semantic palette, defined once per scheme. Components use `bg-surface`
+ * or `text-muted` and never repeat a `dark:` twin — the token flips instead,
+ * so light and dark can never drift apart.
+ */
+:root {
+    --ui-canvas: oklch(0.977 0.004 250);
+    --ui-surface: oklch(1 0 0);
+    --ui-surface-sunken: oklch(0.968 0.005 250);
+    --ui-surface-hover: oklch(0.955 0.006 250);
+
+    --ui-line: oklch(0.912 0.008 250);
+    --ui-line-strong: oklch(0.83 0.012 250);
+
+    --ui-ink: oklch(0.23 0.02 265);
+    --ui-ink-soft: oklch(0.42 0.018 265);
+    --ui-muted: oklch(0.55 0.016 260);
+    --ui-faint: oklch(0.65 0.014 260);
+
+    /*
+     * Deliberately low chroma. The accent marks one action per screen; at
+     * full saturation it competes with the listing photos, which are the
+     * thing actually being looked at.
+     */
+    --ui-brand: oklch(0.45 0.062 250);
+    --ui-brand-hover: oklch(0.37 0.058 250);
+    --ui-brand-ring: oklch(0.62 0.05 250);
+    --ui-on-brand: oklch(1 0 0);
+
+    --ui-good: oklch(0.52 0.13 162);
+    --ui-good-surface: oklch(0.95 0.04 162);
+    --ui-good-ink: oklch(0.4 0.1 162);
+
+    --ui-warn: oklch(0.62 0.14 76);
+    --ui-warn-surface: oklch(0.96 0.06 86);
+    --ui-warn-ink: oklch(0.45 0.11 66);
+
+    --ui-bad: oklch(0.55 0.19 20);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --ui-canvas: oklch(0.19 0.014 265);
+        --ui-surface: oklch(0.235 0.016 265);
+        --ui-surface-sunken: oklch(0.205 0.015 265);
+        --ui-surface-hover: oklch(0.285 0.018 265);
+
+        --ui-line: oklch(0.32 0.018 265);
+        --ui-line-strong: oklch(0.42 0.02 265);
+
+        --ui-ink: oklch(0.95 0.008 260);
+        --ui-ink-soft: oklch(0.85 0.01 260);
+        --ui-muted: oklch(0.72 0.015 260);
+        --ui-faint: oklch(0.6 0.015 260);
+
+        --ui-brand: oklch(0.78 0.05 250);
+        --ui-brand-hover: oklch(0.86 0.045 250);
+        --ui-brand-ring: oklch(0.6 0.05 250);
+        --ui-on-brand: oklch(0.2 0.02 250);
+
+        --ui-good: oklch(0.78 0.15 162);
+        --ui-good-surface: oklch(0.3 0.07 165);
+        --ui-good-ink: oklch(0.86 0.13 162);
+
+        --ui-warn: oklch(0.8 0.13 82);
+        --ui-warn-surface: oklch(0.32 0.06 76);
+        --ui-warn-ink: oklch(0.87 0.12 86);
+
+        --ui-bad: oklch(0.72 0.16 20);
+    }
+}
+
+@theme inline {
+    --font-sans:
+        Instrument Sans, ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+
+    --color-canvas: var(--ui-canvas);
+    --color-surface: var(--ui-surface);
+    --color-surface-sunken: var(--ui-surface-sunken);
+    --color-surface-hover: var(--ui-surface-hover);
+
+    --color-line: var(--ui-line);
+    --color-line-strong: var(--ui-line-strong);
+
+    --color-ink: var(--ui-ink);
+    --color-ink-soft: var(--ui-ink-soft);
+    --color-muted: var(--ui-muted);
+    --color-faint: var(--ui-faint);
+
+    --color-brand: var(--ui-brand);
+    --color-brand-hover: var(--ui-brand-hover);
+    --color-brand-ring: var(--ui-brand-ring);
+    --color-on-brand: var(--ui-on-brand);
+
+    --color-good: var(--ui-good);
+    --color-good-surface: var(--ui-good-surface);
+    --color-good-ink: var(--ui-good-ink);
+
+    --color-warn: var(--ui-warn);
+    --color-warn-surface: var(--ui-warn-surface);
+    --color-warn-ink: var(--ui-warn-ink);
+
+    --color-bad: var(--ui-bad);
+}
+
+/* Keyboard users get the same accent the rest of the UI is built on. */
+@layer base {
+    :focus-visible {
+        outline: 2px solid var(--ui-brand-ring);
+        outline-offset: 2px;
+    }
+}

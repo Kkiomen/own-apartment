@@ -1,0 +1,127 @@
+name: apartment
+
+# The app image is built once and reused by migrate / app / queue / scheduler.
+x-app: &app
+  image: apartment/app:latest
+  build:
+    context: .
+    target: app
+  # Deliberately NOT .env — that one stays yours for Herd/local dev.
+  env_file: [.env.docker]
+  volumes:
+    - app-storage:/var/www/html/storage
+  restart: unless-stopped
+
+# Everything that talks to the database waits for migrations to finish first,
+# otherwise the queue worker boots against an empty schema and crash-loops.
+x-after-migrate: &after-migrate
+  migrate:
+    condition: service_completed_successfully
+
+services:
+  # Only service reachable from outside the compose network.
+  web:
+    image: apartment/web:latest
+    build:
+      context: .
+      target: web
+    ports:
+      - "${APP_PORT:-8090}:80"
+    depends_on: [app]
+    networks: [edge]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost/up > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # One-shot. Runs to completion, then the rest of the stack starts.
+  migrate:
+    <<: *app
+    environment:
+      CONTAINER_ROLE: migrate
+    command: php artisan migrate --force
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    restart: "no"
+
+  app:
+    <<: *app
+    environment:
+      CONTAINER_ROLE: app
+    depends_on: *after-migrate
+    networks: [edge, internal]
+    healthcheck:
+      # Cheap and precise: is php-fpm accepting connections. Booting Laravel on
+      # a timer just to answer "yes" would cost more than it tells us.
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 9000) ? 0 : 1);'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # One-shot, first deployment only. Without it the app sits empty until the
+  # top of the hour, which reads like a broken install. Skips itself once there
+  # are listings, so restarting the stack does not re-scrape five portals.
+  seed:
+    <<: *app
+    environment:
+      CONTAINER_ROLE: seed
+    command: php artisan listings:scan --if-empty
+    depends_on: *after-migrate
+    networks: [edge, internal]
+    restart: "no"
+
+  # Scrapers run here. Needs egress, hence the `edge` network.
+  queue:
+    <<: *app
+    environment:
+      CONTAINER_ROLE: queue
+    command: php artisan queue:work --tries=3 --backoff=60 --max-time=3600 --sleep=3
+    depends_on: *after-migrate
+    networks: [edge, internal]
+    stop_grace_period: 60s
+
+  # Ticks every minute and dispatches whatever is registered in routes/console.php.
+  scheduler:
+    <<: *app
+    environment:
+      CONTAINER_ROLE: scheduler
+    command: php artisan schedule:work
+    depends_on: *after-migrate
+    networks: [edge, internal]
+
+  # No `ports:` and only on the internal network — unreachable from the host
+  # and from the internet. Talk to it with `docker compose exec postgres psql`.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [internal]
+    restart: unless-stopped
+
+networks:
+  edge:
+    driver: bridge
+  # internal: true == no route to or from the outside world.
+  internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  pgdata:
+  app-storage:
