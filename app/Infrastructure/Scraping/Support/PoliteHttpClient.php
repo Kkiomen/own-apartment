@@ -60,8 +60,11 @@ final readonly class PoliteHttpClient
             ->retry(3, $this->backoffMs(...), $this->worthRetrying(...), throw: false)
             ->get($url);
 
-        if ($response->status() === 404) {
-            throw new PageNotFound("Request to {$url} returned HTTP 404.");
+        // 410 is what OLX answers for a withdrawn advert. Same meaning as a 404
+        // for every caller here — the page is not there — and only ever more
+        // definite about it.
+        if (in_array($response->status(), [404, 410], true)) {
+            throw new PageNotFound("Request to {$url} returned HTTP {$response->status()}.");
         }
 
         if (in_array($response->status(), self::REFUSAL_STATUSES, true)) {

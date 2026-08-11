@@ -25,6 +25,7 @@ final class ListingDataFactory
         int $rooms = 3,
         int $priceZloty = 549_000,
         ?string $title = null,
+        array $images = [],
     ): ListingData {
         return new ListingData(
             portal: $portal,
@@ -36,6 +37,7 @@ final class ListingDataFactory
             rooms: $rooms,
             price: Price::fromZloty($priceZloty),
             district: 'Krzyki',
+            images: $images,
         );
     }
 

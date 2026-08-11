@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $title
  * @property CarbonImmutable $first_seen_at
  * @property CarbonImmutable $last_seen_at
+ * @property ?CarbonImmutable $last_verified_at
  * @property bool $is_active
  */
 class ListingSourceRecord extends Model
@@ -42,6 +43,7 @@ class ListingSourceRecord extends Model
             'is_active' => 'boolean',
             'first_seen_at' => 'immutable_datetime',
             'last_seen_at' => 'immutable_datetime',
+            'last_verified_at' => 'immutable_datetime',
         ];
     }
 }

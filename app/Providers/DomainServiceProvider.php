@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Application\Listing\IngestListing;
 use App\Application\Scanning\AppraiseListings;
 use App\Application\Scanning\ScanPortals;
+use App\Application\Verification\VerifyListings;
 use App\Domain\Alert\Port\AlertNotifier;
 use App\Domain\Listing\Appraisal\ListingAppraiser;
 use App\Domain\Listing\ListingPlausibility;
@@ -15,6 +16,8 @@ use App\Domain\Listing\Port\ListingCatalog;
 use App\Domain\Listing\Port\ListingMaintenance;
 use App\Domain\Listing\Port\ListingProvider;
 use App\Domain\Listing\Port\ListingRepository;
+use App\Domain\Listing\Port\ListingVerification;
+use App\Domain\Listing\Port\OfferInspector;
 use App\Domain\Listing\Port\PriceHistoryRepository;
 use App\Domain\Listing\ValueObject\Portal;
 use App\Domain\Search\SearchCriteria;
@@ -25,16 +28,21 @@ use App\Infrastructure\Persistence\Eloquent\EloquentListingAppraisals;
 use App\Infrastructure\Persistence\Eloquent\EloquentListingCatalog;
 use App\Infrastructure\Persistence\Eloquent\EloquentListingMaintenance;
 use App\Infrastructure\Persistence\Eloquent\EloquentListingRepository;
+use App\Infrastructure\Persistence\Eloquent\EloquentListingVerification;
 use App\Infrastructure\Persistence\Eloquent\EloquentPriceHistoryRepository;
 use App\Infrastructure\Scraping\Gratka\GratkaSearch;
 use App\Infrastructure\Scraping\Morizon\MorizonSearch;
 use App\Infrastructure\Scraping\NieruchomosciOnline\NieruchomosciOnlineSearch;
 use App\Infrastructure\Scraping\Olx\OlxListingParser;
+use App\Infrastructure\Scraping\Olx\OlxOfferGallery;
 use App\Infrastructure\Scraping\Olx\OlxSearch;
 use App\Infrastructure\Scraping\Olx\OlxSearchUrl;
 use App\Infrastructure\Scraping\Otodom\OtodomListingParser;
+use App\Infrastructure\Scraping\Otodom\OtodomOfferGallery;
 use App\Infrastructure\Scraping\Otodom\OtodomSearch;
 use App\Infrastructure\Scraping\Otodom\OtodomSearchUrl;
+use App\Infrastructure\Scraping\Support\HttpOfferInspector;
+use App\Infrastructure\Scraping\Support\LdJsonOfferGallery;
 use App\Infrastructure\Scraping\Support\PaginatedListingProvider;
 use App\Infrastructure\Scraping\Support\PoliteHttpClient;
 use App\Infrastructure\Scraping\Support\PortalSearch;
@@ -80,12 +88,14 @@ final class DomainServiceProvider extends ServiceProvider
             longOnMarketDays: (int) config('search.appraisal.long_on_market_days'),
             tooGoodToBeTruePercent: (float) config('search.appraisal.too_good_to_be_true_percent'),
             plausibility: $app->make(ListingPlausibility::class),
+            cheaperElsewhereMinimumZloty: (int) config('search.appraisal.cheaper_elsewhere_min_pln'),
         ));
 
         $this->app->singleton(ListingPlausibility::class, static fn (): ListingPlausibility => ListingPlausibility::fromZloty(
             (int) config('search.suspicious_below_price_per_m2'),
         ));
         $this->app->singleton(PriceHistoryRepository::class, EloquentPriceHistoryRepository::class);
+        $this->app->singleton(ListingVerification::class, EloquentListingVerification::class);
 
         // No channel wired up yet by decision — see LoggingAlertNotifier.
         $this->app->singleton(AlertNotifier::class, LoggingAlertNotifier::class);
@@ -96,6 +106,41 @@ final class DomainServiceProvider extends ServiceProvider
             timeoutSeconds: (int) config('search.scraping.request_timeout_seconds'),
             userAgent: (string) config('search.scraping.user_agent'),
             retryAfterCapSeconds: (int) config('search.scraping.retry_after_cap_seconds'),
+        ));
+
+        $this->app->singleton(OfferInspector::class, static function (Application $app): OfferInspector {
+            $markers = static fn (string $key): array => array_values(array_filter(
+                (array) config("search.verification.{$key}"),
+                'is_string',
+            ));
+
+            return new HttpOfferInspector(
+                http: $app->make(PoliteHttpClient::class),
+                logger: $app->make(LoggerInterface::class),
+                galleries: [
+                    // OLX and Otodom read their own offer pages; the three
+                    // schema.org portals get the portable Product reader, which
+                    // finds photos if they publish any and is silent if not.
+                    Portal::Olx->value => $app->make(OlxOfferGallery::class),
+                    Portal::Otodom->value => $app->make(OtodomOfferGallery::class),
+                    Portal::Gratka->value => $app->make(LdJsonOfferGallery::class),
+                    Portal::Morizon->value => $app->make(LdJsonOfferGallery::class),
+                    Portal::NieruchomosciOnline->value => $app->make(LdJsonOfferGallery::class),
+                ],
+                goneTitleMarkers: $markers('gone_title_markers'),
+                goneMarkers: $markers('gone_markers'),
+            );
+        });
+
+        $this->app->singleton(VerifyListings::class, static fn (Application $app): VerifyListings => new VerifyListings(
+            verification: $app->make(ListingVerification::class),
+            offers: $app->make(OfferInspector::class),
+            listings: $app->make(ListingRepository::class),
+            maintenance: $app->make(ListingMaintenance::class),
+            clock: $app->make(Clock::class),
+            logger: $app->make(LoggerInterface::class),
+            recheckAfterHours: (int) config('search.verification.recheck_after_hours'),
+            maxPerRun: (int) config('search.verification.max_per_run'),
         ));
 
         $this->registerScrapers();

@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Infrastructure\Console\ScanPortalsCommand;
+use App\Infrastructure\Console\VerifyListingsCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
     // outside the app/Console/Commands path Laravel auto-discovers.
     ->withCommands([
         ScanPortalsCommand::class,
+        VerifyListingsCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [

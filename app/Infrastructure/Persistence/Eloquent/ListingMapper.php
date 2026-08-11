@@ -83,21 +83,26 @@ final class ListingMapper
         ];
     }
 
+    public function sourceToDomain(ListingSourceRecord $source): SourceReference
+    {
+        return new SourceReference(
+            portal: Portal::from($source->portal),
+            externalId: $source->external_id,
+            url: $source->url,
+            title: $source->title,
+            firstSeenAt: DateTimeImmutable::createFromInterface($source->first_seen_at),
+            lastSeenAt: DateTimeImmutable::createFromInterface($source->last_seen_at),
+            isActive: $source->is_active,
+        );
+    }
+
     /**
      * @return list<SourceReference>
      */
     private function sourcesToDomain(ListingRecord $record): array
     {
         return array_values($record->sources
-            ->map(fn (ListingSourceRecord $source): SourceReference => new SourceReference(
-                portal: Portal::from($source->portal),
-                externalId: $source->external_id,
-                url: $source->url,
-                title: $source->title,
-                firstSeenAt: DateTimeImmutable::createFromInterface($source->first_seen_at),
-                lastSeenAt: DateTimeImmutable::createFromInterface($source->last_seen_at),
-                isActive: $source->is_active,
-            ))
+            ->map(fn (ListingSourceRecord $source): SourceReference => $this->sourceToDomain($source))
             ->all());
     }
 }

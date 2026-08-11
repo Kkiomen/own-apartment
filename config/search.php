@@ -67,6 +67,11 @@ return [
         // mis-parsed area. Relative because 3 777 zł/m² is normal in Tomaszów
         // and impossible in Wrocław.
         'too_good_to_be_true_percent' => (float) env('SEARCH_TOO_GOOD_PERCENT', 40),
+
+        // How much cheaper the same flat has to be on another portal before it
+        // is worth saying so. Two adverts for one flat rarely agree to the
+        // grosz, and a gap of a few złoty is not a reason to switch portals.
+        'cheaper_elsewhere_min_pln' => (int) env('SEARCH_CHEAPER_ELSEWHERE_MIN_PLN', 1_000),
     ],
 
     /*
@@ -92,6 +97,53 @@ return [
     */
 
     'stale_after_days' => (int) env('SEARCH_STALE_AFTER_DAYS', 14),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Verifying adverts one by one
+    |--------------------------------------------------------------------------
+    |
+    | The other half of retiring. A search sweep can only say "I did not see
+    | it", which is why it waits a fortnight; opening the offer page gives a
+    | definite answer, so a withdrawn flat leaves the list the same day.
+    |
+    | Bounded per run because this is one request per advert: max_per_run at the
+    | hourly cadence is the real ceiling on how much traffic we send, and the
+    | queue is worked oldest-check-first so nothing is starved.
+    |
+    */
+
+    'verification' => [
+        'recheck_after_hours' => (int) env('SEARCH_RECHECK_AFTER_HOURS', 24),
+        'max_per_run' => (int) env('SEARCH_VERIFY_MAX_PER_RUN', 60),
+
+        /*
+         * Backup for the portals we could not check against a live withdrawn
+         * advert. OLX and Otodom both answer 410, so neither list is what
+         * retires them.
+         *
+         * Matched against the page <title> only. Verified: Otodom titles an
+         * archived offer "Archiwalne: 3 pokoje, mieszkanie na sprzedaż — …".
+         * One word is safe here precisely because a title is not free text.
+         */
+        'gone_title_markers' => [
+            'archiwaln',
+        ],
+
+        /*
+         * Matched against the whole page, tags stripped and lower-cased. Keep
+         * these to full sentences: a phrase that also occurs somewhere on a
+         * live page — in a footer, a related-offers widget — silently deletes
+         * flats from the list, which is the one failure here nobody notices.
+         */
+        'gone_markers' => [
+            'to ogłoszenie nie jest już dostępne',
+            'to ogłoszenie jest już nieaktualne',
+            'ogłoszenie zostało usunięte',
+            'oferta jest już nieaktualna',
+            'oferta została zarchiwizowana',
+        ],
+    ],
 
     'portals' => [
         'olx' => (bool) env('PORTAL_OLX_ENABLED', true),

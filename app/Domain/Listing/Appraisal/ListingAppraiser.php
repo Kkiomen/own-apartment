@@ -23,6 +23,7 @@ final readonly class ListingAppraiser
         private int $longOnMarketDays,
         private float $tooGoodToBeTruePercent,
         private ListingPlausibility $plausibility,
+        private Price $cheaperElsewhereMinimum,
     ) {}
 
     public static function with(
@@ -31,6 +32,7 @@ final readonly class ListingAppraiser
         int $longOnMarketDays,
         float $tooGoodToBeTruePercent,
         ListingPlausibility $plausibility,
+        int $cheaperElsewhereMinimumZloty = 1_000,
     ): self {
         return new self(
             Price::fromZloty($comfortableBudgetZloty),
@@ -38,6 +40,7 @@ final readonly class ListingAppraiser
             $longOnMarketDays,
             $tooGoodToBeTruePercent,
             $plausibility,
+            Price::fromZloty($cheaperElsewhereMinimumZloty),
         );
     }
 
@@ -97,12 +100,18 @@ final readonly class ListingAppraiser
             $found[] = [ListingLabel::PrivateSeller, 'Prywatnie, bez prowizji'];
         }
 
-        if ($subject->cheapestElsewhere !== null && $subject->cheapestElsewhere->isLessThan($subject->price)) {
-            $difference = Price::fromGrosze($subject->price->grosze - $subject->cheapestElsewhere->grosze);
+        $cheaperBy = $subject->cheapestElsewhere === null
+            ? null
+            : Price::fromGrosze(max(0, $subject->price->grosze - $subject->cheapestElsewhere->grosze));
 
+        // Only when the gap is worth acting on. Two adverts for one flat rarely
+        // agree to the grosz — a developer's 599 043,60 zł against the same flat
+        // at 599 044 zł produced "To samo mieszkanie taniej o 0 zł", which is
+        // both wrong and, at 40 groszy, not a reason to switch portals.
+        if ($cheaperBy !== null && ! $cheaperBy->isLessThan($this->cheaperElsewhereMinimum)) {
             $found[] = [
                 ListingLabel::CheaperElsewhere,
-                'To samo mieszkanie taniej o '.$difference->format(),
+                'To samo mieszkanie taniej o '.$cheaperBy->format(),
             ];
         }
 

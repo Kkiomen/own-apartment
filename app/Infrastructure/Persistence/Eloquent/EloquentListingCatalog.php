@@ -31,7 +31,13 @@ final readonly class EloquentListingCatalog implements ListingCatalog
 
         $records = $query
             ->with([
-                'sources' => static fn ($relation) => $relation->orderBy('first_seen_at')->orderBy('id'),
+                // Active only: a flat can outlive one of its adverts, and a
+                // button leading to a withdrawn OLX offer is worse than no
+                // button — it reads as the whole listing being dead.
+                'sources' => static fn ($relation) => $relation
+                    ->where('is_active', true)
+                    ->orderBy('first_seen_at')
+                    ->orderBy('id'),
                 // Newest first, tie-broken by insertion order: two changes can
                 // land in the same second and must still render in the order
                 // they actually happened.

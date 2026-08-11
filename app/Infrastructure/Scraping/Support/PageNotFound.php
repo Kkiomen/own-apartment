@@ -7,7 +7,8 @@ namespace App\Infrastructure\Scraping\Support;
 use RuntimeException;
 
 /**
- * The portal answered 404.
+ * The portal answered 404 (or 410 — "gone", which OLX uses for a withdrawn
+ * advert and which means the same thing to every caller here).
  *
  * Distinguished from any other failure because it means two very different
  * things depending on where it happens. Past page one it is simply the end of

@@ -105,6 +105,26 @@ it('flags the same flat being cheaper on another portal', function () use ($now)
     expect($label['text'])->toBe('To samo mieszkanie taniej o 31 000 zł');
 });
 
+it('says nothing when the same flat is cheaper by small change', function () use ($now): void {
+    // Seen live: a developer's 599 043,60 zł against the same flat listed at
+    // 599 044 zł, rendered as "To samo mieszkanie taniej o 0 zł".
+    $appraisal = $this->appraiser->appraise(
+        ($this->subject)(['price' => 599_044, 'cheapestElsewhere' => Price::fromZloty(599_043.60)]),
+        $this->market, $now,
+    );
+
+    expect(labelsOf($appraisal))->not->toContain(ListingLabel::CheaperElsewhere->value);
+});
+
+it('says nothing about a gap too small to be worth switching portals for', function () use ($now): void {
+    $appraisal = $this->appraiser->appraise(
+        ($this->subject)(['price' => 560_000, 'cheapestElsewhere' => Price::fromZloty(559_500)]),
+        $this->market, $now,
+    );
+
+    expect(labelsOf($appraisal))->not->toContain(ListingLabel::CheaperElsewhere->value);
+});
+
 it('does not flag a flat that is the cheapest of its variants', function () use ($now): void {
     $appraisal = $this->appraiser->appraise(
         ($this->subject)(['price' => 529_000, 'cheapestElsewhere' => Price::fromZloty(529_000)]),

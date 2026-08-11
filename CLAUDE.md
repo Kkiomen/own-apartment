@@ -25,7 +25,7 @@ Feature-complete and green (211 tests). What exists:
 
 - `App\Infrastructure\Scraping` — shared support plus **all five portal adapters**, verified end-to-end against the live sites.
 - Browse UI — `ListingCatalog` read port, `EloquentListingCatalog`, `ListingsController` and `resources/js/pages/Listings.vue` (filter by city/portal/price drops, five sort orders, paging, per-listing price history).
-- Housekeeping — `ListingMaintenance` retires adverts a portal stopped showing, and `ListingPlausibility` flags listings too cheap per m² to be a flat.
+- Housekeeping — `ListingMaintenance` retires adverts a portal stopped showing, `VerifyListings` re-checks known adverts against their own offer page, and `ListingPlausibility` flags listings too cheap per m² to be a flat.
 - `App\Domain\Listing\Appraisal` — labels and a score that rank listings ("Poniżej 500 000 zł", "31% poniżej mediany m²", "Do remontu"), recomputed over the whole set after every scan by `AppraiseListings`. Drives the default `best_value` sort.
 - Deployment — `deploy.sh` stands the Docker stack up on a VPS in one idempotent command.
 
@@ -40,11 +40,41 @@ Two guards stop junk topping the list, both found by running against live data r
 
 Such listings stay on the list with their warning; they are simply never advertised as finds.
 
-Cheaper-elsewhere detection needs `variant_key` (city|area|rooms, **without** price). The fingerprint deliberately includes price so one flat at two prices stays two rows; `variant_key` is how those rows find each other again.
+Cheaper-elsewhere detection needs `variant_key` (city|area|rooms, **without** price). The fingerprint deliberately includes price so one flat at two prices stays two rows; `variant_key` is how those rows find each other again. It only speaks up past `appraisal.cheaper_elsewhere_min_pln` (default 1 000 zł): two adverts for one flat rarely agree to the grosz, and a 40-grosz gap rendered as "To samo mieszkanie taniej o **0 zł**" on live data.
 
 ### Retiring and flagging
 
 **Retiring** (`ScanPortals` → `ListingMaintenance`, threshold `config('search.stale_after_days')`, default 14): an advert unseen for that long is deactivated, and a listing drops off the browse screen only once *no* portal advertises it. Two guards, both tested — retirement only runs for a portal whose scan actually **succeeded** (a portal down for a fortnight must not empty the list), and a listing that reappears is revived automatically by `registerSighting`. The window is generous on purpose: page ceilings mean a live listing can legitimately miss a few scans.
+
+**Verifying** (`VerifyListings` → `listings:verify`, config `search.verification`): the other half of retiring, and the only way to learn a flat is *gone* rather than merely unseen. A sweep can only say "I did not see it", which is why it waits a fortnight; the offer page answers directly — OLX returns **HTTP 410** for a withdrawn advert — so the flat leaves the list the same day. `OfferAvailability` is a port with one HTTP adapter for all five portals, reading three signals in order:
+
+- **the status** — checked against live withdrawn adverts: OLX **and Otodom both answer 410**. Otodom serves a *full 355 kB offer page* with that 410, so the body must never be read before the status or an archived flat looks available.
+- **the page title** — Otodom titles an archived offer `Archiwalne: 3 pokoje, mieszkanie na sprzedaż — …`. One word (`archiwaln`) is safe in a title, which is portal-generated, and would not be safe anywhere else on the page.
+- **a phrase anywhere on the page**, for a portal that only says it in words.
+
+The last two are backup for the three portals no live withdrawn advert was available for; both lists live in config (`verification.gone_title_markers`, `gone_markers`) so a false positive is fixable on the VPS without a deploy, and every match is logged with its URL — the damage a bad phrase does is silent, flats quietly vanishing off the list.
+
+Both marker paths read the page **without a regex**, for the same reason `EmbeddedJsonExtractor` does: these pages run to hundreds of kilobytes and PCRE gives up on them silently.
+
+**The same request also fetches the gallery.** Every portal's *search* payload carries only the **first 3 photos** of an advert — measured, not assumed: one OLX flat has 13 on its own page, an Otodom flat 20, both 3 in search results. So the offer page is the only place a full gallery exists, and the verification pass is already opening it; collecting photos anywhere else would mean paying for the request twice.
+
+`OfferGallery` is one reader per portal, because the payloads have nothing in common:
+
+| Portal | Where the gallery is | Yield |
+|---|---|---|
+| OLX | **markup** — `div[data-testid="ad-photo"]`, with `ld+json` `Product.image` as the floor | 13 vs 5 vs 3 in search |
+| Otodom | `__NEXT_DATA__` → `props.pageProps.ad.images[].large` | 20 vs 3 in search |
+| Gratka / Morizon / Nieruchomości-online | `ld+json` `Product.image` — **unverified**, no live offer page was available | silent if absent |
+
+OLX is the one place this codebase parses markup, and only because it has to: an OLX offer page carries no state blob at all (`__PRERENDERED_STATE__` belongs to the search app), and its only structured data lists 5 of the 13 photos. `data-testid` is picked because it exists for OLX's own tests, which makes it the most stable attribute on a page whose styling churns.
+
+Two guards make a broken reader free: `Listing::refreshGallery()` **refuses a poorer set** than it already holds, and `registerSighting` keeps the richer of the two rather than the newest.
+
+That second guard fixes a bug of its own, and it is the reason some cards showed **exactly one photo**. The schema.org three publish a single `image` per search result, and they are scanned last — so for any flat also advertised there, one photo used to overwrite OLX's three. Last-writer-wins is the wrong rule for galleries; richest-wins is the right one.
+
+The distinctions that carry the safety are in `Availability`: only `Gone` is a fact about the flat. `Unreachable` (timeout, 500) and `Refused` (403/429/503) must never retire anything — collapsing them is how one bad minute on the VPS empties the list. A refusal also stops that portal for the rest of the run, and its adverts keep their old timestamp so they are simply picked up next time. An unreachable advert *is* stamped as checked, or one permanently broken URL would sit at the head of the queue for ever.
+
+Bounded on purpose: `max_per_run` adverts (default 60, one request each), oldest-check-first, every other hour at `:47` — half an hour off the scan, so two streams of requests are not hitting one portal at once.
 
 **Flagging** (`ListingPlausibility`, threshold `config('search.suspicious_below_price_per_m2')`, default 3000 zł/m²): a warning on the card, never a filter. Hiding these would also hide the day a parser starts producing nonsense — a sudden pile of warnings is the signal. On live data this flags exactly 1 listing in 191.
 

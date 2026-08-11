@@ -119,7 +119,11 @@ final class Listing implements PropertyAttributes
 
         // Portals differ in how much they publish. Take whichever sighting
         // actually carried detail rather than letting a terse one erase it.
-        if ($data->images !== []) {
+        //
+        // "More" rather than "any": a search page carries only the first three
+        // photos of an advert that has thirteen, so a plain overwrite would
+        // undo the full gallery read off the offer page on the next scan.
+        if (count($data->images) > count($this->images)) {
             $this->images = $data->images;
         }
 
@@ -253,6 +257,28 @@ final class Listing implements PropertyAttributes
     public function images(): array
     {
         return $this->images;
+    }
+
+    /**
+     * Take the gallery read off the advert's own page.
+     *
+     * Only ever an improvement: search results carry the first three photos of
+     * a flat, the offer page carries all thirteen. A poorer set is refused
+     * rather than trusted, because it is far more likely to be a parser that
+     * has stopped finding the gallery than a seller who deleted ten photos.
+     *
+     * @param  list<string>  $images
+     * @return bool whether the gallery changed
+     */
+    public function refreshGallery(array $images): bool
+    {
+        if (count($images) <= count($this->images)) {
+            return false;
+        }
+
+        $this->images = $images;
+
+        return true;
     }
 
     /**

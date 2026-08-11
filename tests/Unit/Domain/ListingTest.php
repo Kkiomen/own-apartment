@@ -91,3 +91,45 @@ it('keeps the newest title', function () use ($now, $later): void {
 
     expect($listing->title())->toBe('Nowy tytuł, po obniżce');
 });
+
+it('does not let a portal with one photo erase a gallery', function () use ($now, $later): void {
+    // Where the "only one photo" bug came from: the same flat is found on OLX
+    // and on a schema.org portal, and those publish exactly one image per
+    // result. Scanned last, a single photo used to overwrite all of them.
+    $listing = Listing::fromFirstSighting(
+        ListingDataFactory::matching(images: ['a.jpg', 'b.jpg', 'c.jpg']),
+        $now,
+    );
+
+    $listing->registerSighting(
+        ListingDataFactory::matching(portal: Portal::NieruchomosciOnline, externalId: 'nol-1', images: ['only.jpg']),
+        $later,
+    );
+
+    expect($listing->images())->toBe(['a.jpg', 'b.jpg', 'c.jpg']);
+});
+
+it('takes a richer gallery from whichever portal has one', function () use ($now, $later): void {
+    $listing = Listing::fromFirstSighting(ListingDataFactory::matching(images: ['a.jpg']), $now);
+
+    $listing->registerSighting(
+        ListingDataFactory::matching(portal: Portal::Otodom, externalId: 'oto-1', images: ['a.jpg', 'b.jpg', 'c.jpg']),
+        $later,
+    );
+
+    expect($listing->images())->toHaveCount(3);
+});
+
+it('refuses a gallery poorer than the one it already has', function () use ($now): void {
+    // The offer page is the good source, but a reader that has stopped finding
+    // photos must not be able to empty a listing.
+    $listing = Listing::fromFirstSighting(
+        ListingDataFactory::matching(images: ['a.jpg', 'b.jpg', 'c.jpg']),
+        $now,
+    );
+
+    expect($listing->refreshGallery(['x.jpg']))->toBeFalse()
+        ->and($listing->refreshGallery([]))->toBeFalse()
+        ->and($listing->images())->toBe(['a.jpg', 'b.jpg', 'c.jpg'])
+        ->and($listing->refreshGallery(['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg']))->toBeTrue();
+});
